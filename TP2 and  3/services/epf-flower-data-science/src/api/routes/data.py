@@ -1,8 +1,11 @@
 import os
 import json
+import pandas as pd
 import kaggle
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
+from src.services.cleaning import clean_dataset
+
 
 # Define the router
 router = APIRouter()
@@ -68,3 +71,62 @@ def download_dataset(dataset_name: str):
     except HTTPException as e:
         # Si une exception HTTP se produit (comme fichier non trouvé ou autre erreur)
         return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+
+
+# Define the endpoint to read a dataset
+@router.get("/read-dataset/{filename}")
+def read_dataset(filename: str):
+    """
+    Reads a dataset from the Data folder, loads it into a DataFrame, and returns its content as JSON.
+    """
+    #data_folder = "C:/Users/betbe\Desktop/Montpellier cours 5A/data sources/API---Webscrapping/TP2 and  3/services/epf-flower-data-science/src/Data"
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    data_folder = os.path.abspath(os.path.join(current_dir, "../../Data"))
+    print(data_folder)
+    file_path = os.path.join(data_folder, filename)
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File '{filename}' not found in the Data folder.")
+    
+    try:
+        # Determine the file extension and read accordingly
+        if filename.endswith(".csv"):
+            df = pd.read_csv(file_path)
+        elif filename.endswith(".xlsx"):
+            df = pd.read_excel(file_path)
+        elif filename.endswith(".json"):
+            df = pd.read_json(file_path)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Only .csv, .xlsx, and .json are supported.")
+        
+        # Convert the DataFrame to a JSON response
+        return JSONResponse(content=df.to_dict(orient="records"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading the file: {str(e)}")
+
+# Define other endpoints here if needed
+
+@router.post("/clean-dataset/{filename}")
+def clean_dataset_endpoint(filename: str):
+    """
+    Calls the clean_csv function to clean a specified dataset.
+    """
+    try:
+        # Call the clean_csv function
+        cleaned_df, target = clean_dataset(filename)
+
+        # Return the cleaned dataset and target column (if available)
+        response = {
+            "message": "Dataset cleaned successfully.",
+            "cleaned_data_preview": cleaned_df.head().to_dict(orient="records"),
+        }
+        if target is not None:
+            response["target_preview"] = target.head().to_list()
+
+        return JSONResponse(content=response)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Error cleaning the dataset: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
